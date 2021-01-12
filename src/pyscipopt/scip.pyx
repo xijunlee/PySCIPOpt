@@ -4112,17 +4112,63 @@ cdef class Model:
          """
         return SCIPgetNSols(self._scip)
 
+    def getSparseSols(self):
+        """Get all counted solutions in the original variable space by taking sparse solutions in the
+        transformed variable space and converting them to solutions in the original variable space
+
+        :return Solution:  solutions in the original variable space
+        """
+        cdef SCIP_VAR** activevars 
+        cdef int sparsenvars 
+        cdef SCIP_SPARSESOL** sols
+        cdef int nsols
+        cdef SCIP_Longint* sol
+
+        cdef SCIP_VAR** vars;
+        cdef SCIP_Real* scalars;
+
+        _allvars = SCIPgetOrigVars(self._scip)
+        _nallvars = SCIPgetNOrigVars(self._scip)
+        cdef SCIP_Real objval
+
+        cdef SCIP_Real constant
+        cdef SCIP_Real realvalue
+        cdef int requiredsize
+        cdef int nvars
+        cdef int idx
+        cdef int i
+        cdef SCIP_SPARSESOL* sparsesol
+        SCIPgetCountedSparseSols(self._scip, &activevars, &sparsenvars, &sols, &nsols)
+        print(nsols)
+        for s in range(nsols):
+            sparsesol = sols[s]
+            # https://www.scipopt.org/doc-5.0.0/html/group__SparseSol.php#ga56a6b00fdcf3eefa804e814f7ee2ea46 I do not know how to import this
+            SCIPsparseSolGetFirstSol(sparsesol, sol, sparsenvars)
+            while True:
+                for v in range(_nallvars):
+                    vars[0] = _allvars[v]
+                    scalars[0] = 1.0
+                    nvars = 1
+                    constant = 0.0
+
+                    PY_SCIP_CALL( SCIPgetProbvarLinearSum(self._scip, vars, scalars, &nvars, sparsenvars, &constant, &requiredsize, True) )
+                    realvalue = constant;
+                    for i in range(_nallvars):
+                        # I have no idea how to get the hashmap?
+                # https://www.scipopt.org/doc-5.0.0/html/group__SparseSol.php#gaed7a10e2bd49c6b18a16e98d37174498
+                if not SCIPsparseSolGetNextSol(sparsesol, sol, sparsenvars):
+                    break
+
+
     def getSols(self):
         """Retrieve list of all feasible primal solutions stored in the solution storage."""
         cdef SCIP_SOL** _sols
         cdef SCIP_SOL* _sol
         _sols = SCIPgetSols(self._scip)
         nsols = SCIPgetNSols(self._scip)
-        sols = []
-
+        sols = []        
         for i in range(nsols):
             sols.append(Solution.create(self._scip, _sols[i]))
-
         return sols
 
     def getBestSol(self):
@@ -4357,6 +4403,12 @@ cdef class Model:
         SCIPmessageSetErrorPrinting(relayErrorMessage, NULL)
 
     # Parameter Methods
+
+    def collectSols(self):
+        PY_SCIP_CALL(SCIPsetParamsCountsols(self._scip))
+        PY_SCIP_CALL(SCIPsetBoolParam(self._scip, "constraints/countsols/collect", 1));
+        PY_SCIP_CALL(SCIPsetLongintParam(self._scip, "constraints/countsols/sollimit",5) );
+        PY_SCIP_CALL(SCIPcount(self._scip));
 
     def setBoolParam(self, name, value):
         """Set a boolean-valued parameter.
